@@ -3,9 +3,9 @@
     <a href="#" id="bell-notifications-menu" class="bell-icon-link" title="<%= l(:label_notifications) %>">
       <span class="bell-icon-container"></span>
     </a>
-    <meta name="bell-notifications-unread-count-url" content="<%= unread_count_notifications_path(format: :json) %>">
+    <meta name="bell-notifications-unread-count-url" content="<%= unread_count_notifications_path(format: :js) %>">
     <meta name="bell-notifications-dropdown-url" content="<%= dropdown_notifications_path %>">
-    <meta name="bell-notifications-mark-all-read-url" content="<%= mark_all_read_notifications_path(format: :json) %>">
-    <meta name="bell-notifications-mark-read-url-template" content="<%= mark_read_notification_path(id: '__ID__', format: :json) %>">
+    <meta name="bell-notifications-mark-all-read-url" content="<%= mark_all_read_notifications_path(format: :js) %>">
+    <meta name="bell-notifications-mark-read-url-template" content="<%= mark_read_notification_path(id: '__ID__', format: :js) %>">
   </div>
 <% end %>
