@@ -20,6 +20,39 @@
     backoffMultiplier: 1, // Exponential backoff multiplier
     resizeListenerAdded: false, // Flag to prevent duplicate resize listeners
 
+    getMetaContent: function(name) {
+      var meta = document.querySelector('meta[name="' + name + '"]');
+      return meta ? meta.getAttribute('content') : '';
+    },
+
+    getUnreadCountUrl: function() {
+      return this.getMetaContent('bell-notifications-unread-count-url') || '/bell/notifications/unread_count';
+    },
+
+    getDropdownUrl: function() {
+      return this.getMetaContent('bell-notifications-dropdown-url') || '/bell/notifications/dropdown';
+    },
+
+    getMarkAllReadUrl: function() {
+      return this.getMetaContent('bell-notifications-mark-all-read-url') || '/bell/notifications/mark_all_read';
+    },
+
+    getMarkReadUrl: function(notificationId) {
+      var tmpl = this.getMetaContent('bell-notifications-mark-read-url-template');
+      if (tmpl && notificationId) {
+        return tmpl.replace('__ID__', encodeURIComponent(notificationId));
+      }
+      return '/bell/notifications/' + encodeURIComponent(notificationId) + '/mark_read';
+    },
+
+    isSafeInternalPath: function(url) {
+      if (!url) return false;
+      if (url === '#' || url === '') return false;
+      if (url.indexOf('//') === 0) return false;
+      if (url.indexOf('/') !== 0) return false;
+      return true;
+    },
+
     init: function() {
       var self = this;
 
@@ -99,7 +132,7 @@
     updateUnreadCount: function() {
       var self = this;
 
-      fetch('/bell/notifications/unread_count', {
+      fetch(this.getUnreadCountUrl(), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -259,7 +292,7 @@
       }
 
       // Mark as read without navigation
-      fetch('/bell/notifications/' + notificationId + '/mark_read', {
+      fetch(this.getMarkReadUrl(notificationId), {
         method: 'PUT',
         headers: {
           'Accept': 'application/json',
@@ -289,35 +322,19 @@
       var notificationId = notification.getAttribute('data-notification-id');
       var url = notification.getAttribute('data-url');
 
-      // Check for valid URL
-      if (!notificationId || !url || url === '#' || url === '') {
-        console.warn('BellNotifications: No valid URL for notification #' + notificationId);
-        return;
-      }
+      if (!notificationId || !self.isSafeInternalPath(url)) return;
 
-      // Mark as read
-      fetch('/bell/notifications/' + notificationId + '/mark_read', {
+      fetch(this.getMarkReadUrl(notificationId), {
         method: 'PUT',
         headers: {
           'Accept': 'application/json',
-          'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
           'X-CSRF-Token': self.getCSRFToken()
-        }
-      })
-      .then(function(response) {
-        return response.json();
-      })
-      .then(function(data) {
-        if (data.success) {
-          window.location.href = url;
-        }
-      })
-      .catch(function(error) {
-        console.error('BellNotifications: Error marking as read:', error);
-        // Navigate anyway
-        window.location.href = url;
+        },
+        keepalive: true
       });
+
+      window.location.href = url;
     },
 
     markAllAsRead: function() {
@@ -334,7 +351,7 @@
       button.style.opacity = '0.6';
       button.style.pointerEvents = 'none';
 
-      fetch('/bell/notifications/mark_all_read', {
+      fetch(this.getMarkAllReadUrl(), {
         method: 'PUT',
         headers: {
           'Accept': 'application/json',
@@ -481,7 +498,7 @@
     openDropdown: function() {
       var self = this;
 
-      fetch('/bell/notifications/dropdown', {
+      fetch(this.getDropdownUrl(), {
         method: 'GET',
         headers: {
           'X-Requested-With': 'XMLHttpRequest'

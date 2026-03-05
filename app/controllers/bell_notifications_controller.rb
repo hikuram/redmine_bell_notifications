@@ -1,3 +1,5 @@
+require 'uri'
+
 # Bell Notifications Controller
 #
 # Handles AJAX requests for the bell notification dropdown and notification actions.
@@ -66,10 +68,11 @@ class BellNotificationsController < ApplicationController
   def mark_read
     @notification.mark_as_read!
 
-    redirect_url = @notification.notification_url || root_path
+    raw_url = @notification.notification_url || root_path
+    redirect_url = safe_internal_redirect_path(raw_url)
 
     respond_to do |format|
-      format.html { redirect_to redirect_url }
+      format.html { redirect_to redirect_url, allow_other_host: false }
       format.json { render json: { success: true, url: redirect_url } }
       format.js { render json: { success: true, url: redirect_url } }
     end
@@ -89,6 +92,7 @@ class BellNotificationsController < ApplicationController
     respond_to do |format|
       format.html { redirect_back fallback_location: root_path }
       format.js { render json: { success: true } }
+      format.json { render json: { success: true } }
     end
   end
 
@@ -115,4 +119,22 @@ class BellNotificationsController < ApplicationController
   def dropdown_limit
     RedmineBellNotifications::Settings.dropdown_limit
   end
+  # Accept only internal absolute paths.
+  # Reject protocol-relative (//evil.example) and any URL with scheme/host.
+  def safe_internal_redirect_path(value)
+    s = value.to_s
+    return root_path if s.empty?
+    return root_path if s.start_with?('//')
+    return root_path unless s.start_with?('/')
+
+    begin
+      uri = URI.parse(s)
+      return root_path if uri.scheme || uri.host
+    rescue URI::InvalidURIError
+      return root_path
+    end
+
+    s
+  end
+
 end
