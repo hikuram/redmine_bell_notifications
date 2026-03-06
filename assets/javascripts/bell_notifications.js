@@ -95,7 +95,7 @@
 
       var bellWrapper = document.getElementById('bell-notifications-wrapper');
       if (!bellWrapper) {
-        console.warn('BellNotifications: Could not find bell wrapper');
+        //console.warn('BellNotifications: Could not find bell wrapper');
         return;
       }
 
