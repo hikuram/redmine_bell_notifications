@@ -74,6 +74,7 @@
       this.setupResizeListener();
       this.setupTabSync();           // 追加: タブ同期のセットアップ
       this.setupVisibilityListener();// 追加: タブ表示/非表示の検知
+      this.renderBadge();            // 追加: まずDOM上に「待ち受け中」バッジを生成する
       this.updateUnreadCount();
       this.startPolling();
       this.bindEvents();
@@ -156,6 +157,7 @@
         }
         return response.json();
       })
+      
       .then(function(data) {
         self.renderBadge(data.count);
         // Reset failure count on success
@@ -185,15 +187,8 @@
       this.sessionExpired = true;
       this.stopPolling();
       
-      // UIのフィードバック: バッジをグレーアウトして半透明にする
-      var menu = document.getElementById('bell-notifications-menu');
-      if (menu) {
-        var badge = menu.querySelector('.unread-badge');
-        if (badge) {
-          badge.style.backgroundColor = '#999'; // グレーアウト
-          badge.style.opacity = '0.5';
-        }
-      }
+      // セッション切れのステータスでバッジを再描画
+      this.renderBadge(null, 'expired');
     },
     
     handleFetchError: function() {
@@ -216,30 +211,44 @@
       }
     },
 
-    renderBadge: function(count) {
+    // 変更: 引数に state を追加
+    renderBadge: function(count, state) {
       var menu = document.getElementById('bell-notifications-menu');
       if (!menu) return;
 
       var badge = menu.querySelector('.unread-badge');
 
-      // Always show badge, even when count is 0
+      // バッジ要素がなければ作成（初期生成時は「待ち受け中」）
       if (!badge) {
         badge = document.createElement('span');
-        badge.className = 'unread-badge';
+        badge.className = 'unread-badge state-loading'; // 初期クラス
+        badge.textContent = '...'; // 通信中を示すテキスト
         menu.appendChild(badge);
       }
 
-      badge.textContent = count > CONSTANTS.MAX_BADGE_DISPLAY_COUNT
-        ? CONSTANTS.MAX_BADGE_DISPLAY_COUNT + '+'
-        : count.toString();
-      badge.style.display = 'inline-block';
-
-      // Optional: dim the badge when count is 0
-      if (count === 0) {
-        badge.style.opacity = '0.5';
-      } else {
-        badge.style.opacity = '1';
+      // 特殊な状態（セッション切れ）のハンドリング
+      if (state === 'expired') {
+        badge.className = 'unread-badge state-expired';
+        badge.textContent = '!'; // セッション切れを示すアイコン代わり
+        badge.title = 'Session Expired';
+        return;
       }
+
+      // 通常の件数更新のハンドリング
+      if (typeof count !== 'undefined' && count !== null) {
+        badge.textContent = count > CONSTANTS.MAX_BADGE_DISPLAY_COUNT
+          ? CONSTANTS.MAX_BADGE_DISPLAY_COUNT + '+'
+          : count.toString();
+        
+        // 件数に応じてクラスを切り替え
+        if (count === 0) {
+          badge.className = 'unread-badge state-none';
+        } else {
+          badge.className = 'unread-badge state-has-unread';
+        }
+      }
+
+      badge.style.display = 'inline-block';
     },
 
     startPolling: function() {
