@@ -8,7 +8,8 @@
     MAX_POLLING_FAILURES: 3,          // Stop polling after this many consecutive failures
     POLLING_RETRY_DELAY_MS: 300000,   // Retry delay after max failures (5 minutes)
     MAX_BADGE_DISPLAY_COUNT: 99,      // Maximum count to show in badge (shows "99+" if more)
-    MARK_ALL_FEEDBACK_DURATION_MS: 1500 // Duration to show "Done!" feedback
+    MARK_ALL_FEEDBACK_DURATION_MS: 1500, // Duration to show "Done!" feedback
+    CHANNEL_NAME: 'redmine_bell_notifications_sync' // 追加: タブ間通信用のチャンネル名
   };
 
   var BellNotifications = {
@@ -19,6 +20,7 @@
     maxFailures: CONSTANTS.MAX_POLLING_FAILURES,
     backoffMultiplier: 1, // Exponential backoff multiplier
     resizeListenerAdded: false, // Flag to prevent duplicate resize listeners
+    channel: null, // 追加: BroadcastChannel用変数
 
     getMetaContent: function(name) {
       var meta = document.querySelector('meta[name="' + name + '"]');
@@ -69,6 +71,8 @@
     start: function() {
       this.positionBellIcon();
       this.setupResizeListener();
+      this.setupTabSync();           // 追加: タブ同期のセットアップ
+      this.setupVisibilityListener();// 追加: タブ表示/非表示の検知
       this.updateUnreadCount();
       this.startPolling();
       this.bindEvents();
@@ -150,6 +154,11 @@
         // Reset failure count on success
         self.failureCount = 0;
         self.backoffMultiplier = 1;
+        
+        // 追加: 取得した最新の未読数を他のタブに共有する
+        if (self.channel) {
+          self.channel.postMessage({ count: data.count });
+        }
       })
       .catch(function(error) {
         console.error('BellNotifications: Error fetching unread count:', error);
@@ -210,7 +219,10 @@
       if (this.pollingIntervalId) {
         clearInterval(this.pollingIntervalId);
       }
-
+      
+      // 追加: 非表示タブではポーリングを開始しない
+      if (document.hidden) return;
+      
       this.pollingIntervalId = setInterval(function() {
         self.updateUnreadCount();
       }, this.pollInterval);
@@ -223,6 +235,35 @@
       }
     },
 
+    setupTabSync: function() {
+      // 古いブラウザ（IEなど）はサポートしていないためのフォールバック
+      if (typeof BroadcastChannel !== 'undefined') {
+        this.channel = new BroadcastChannel(CONSTANTS.CHANNEL_NAME);
+        var self = this;
+        
+        // 他のタブからメッセージを受け取った時の処理
+        this.channel.onmessage = function(event) {
+          if (event.data && typeof event.data.count !== 'undefined') {
+            self.renderBadge(event.data.count);
+          }
+        };
+      }
+    },
+
+    setupVisibilityListener: function() {
+      var self = this;
+      document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+          // タブが隠れたらポーリングを停止して負荷を減らす
+          self.stopPolling();
+        } else {
+          // タブがアクティブになったら即座に最新を取得し、ポーリングを再開する
+          self.updateUnreadCount();
+          self.startPolling();
+        }
+      });
+    },
+    
     bindEvents: function() {
       var self = this;
 
