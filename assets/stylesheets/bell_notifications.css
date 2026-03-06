@@ -518,6 +518,35 @@
   }
 }
 
+/* ========================================
+   バッジの状態ごとのスタイル
+   ======================================== */
+
+/* 1. 待ち受け中（通信中・初期状態） */
+.unread-badge.state-loading {
+  background-color: #f39c12; /* オレンジ系 */
+  opacity: 0.8;
+}
+
+/* 2. 新着なし（未読 0件） */
+.unread-badge.state-none {
+  background-color: #95a5a6; /* グレー系 */
+  opacity: 0.6;
+}
+
+/* 3. 新着あり（未読 1件以上）※既存のスタイルを上書き */
+.unread-badge.state-has-unread {
+  background-color: #e74c3c; /* 赤系 */
+  opacity: 1;
+}
+
+/* 4. セッション切れ */
+.unread-badge.state-expired {
+  background-color: #34495e; /* ダークグレー系 */
+  opacity: 0.9;
+  border: 1px solid #fff; /* 少し目立たせるための枠線 */
+}
+
 /* Theme compatibility - Inherits from Redmine's theme system */
 /* Dark themes will automatically work through Redmine's theme CSS variables */
 /* Alternative themes will work by inheriting colors from the active theme */
