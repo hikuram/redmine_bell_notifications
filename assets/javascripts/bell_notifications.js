@@ -21,6 +21,7 @@
     backoffMultiplier: 1, // Exponential backoff multiplier
     resizeListenerAdded: false, // Flag to prevent duplicate resize listeners
     channel: null, // 追加: BroadcastChannel用変数
+    sessionExpired: false, // 追加: セッション切れフラグ
 
     getMetaContent: function(name) {
       var meta = document.querySelector('meta[name="' + name + '"]');
@@ -134,8 +135,10 @@
     },
 
     updateUnreadCount: function() {
+      // 追加: 既にセッション切れを検知している場合は何もしない
+      if (this.sessionExpired) return;
+      
       var self = this;
-
       fetch(this.getUnreadCountUrl(), {
         method: 'GET',
         headers: {
@@ -144,6 +147,10 @@
         }
       })
       .then(function(response) {
+        // 追加: 明示的な認証エラー(401)や権限エラー(403)を検知
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Session Expired');
+        }
         if (!response.ok) {
           throw new Error('HTTP error ' + response.status);
         }
@@ -161,11 +168,34 @@
         }
       })
       .catch(function(error) {
-        console.error('BellNotifications: Error fetching unread count:', error);
-        self.handleFetchError();
+        // 修正: エラーの種類に応じて処理を分岐
+        if (error.message === 'Session Expired' || error.name === 'SyntaxError') {
+          // SyntaxErrorは、Redmineがログイン画面(HTML)を返してきてJSONパースに失敗した場合
+          console.warn('BellNotifications: Session expired. Stopping polling.');
+          self.handleSessionExpired();
+        } else {
+          console.error('BellNotifications: Error fetching unread count:', error);
+          self.handleFetchError();
+        }
       });
     },
-
+    
+    // 追加: セッション切れ時の処理
+    handleSessionExpired: function() {
+      this.sessionExpired = true;
+      this.stopPolling();
+      
+      // UIのフィードバック: バッジをグレーアウトして半透明にする
+      var menu = document.getElementById('bell-notifications-menu');
+      if (menu) {
+        var badge = menu.querySelector('.unread-badge');
+        if (badge) {
+          badge.style.backgroundColor = '#999'; // グレーアウト
+          badge.style.opacity = '0.5';
+        }
+      }
+    },
+    
     handleFetchError: function() {
       this.failureCount++;
 
