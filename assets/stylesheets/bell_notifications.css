@@ -1,20 +1,20 @@
 /* Bell Notifications Plugin - Theme-compatible Redmine styling */
 
 /*
- * Bell Icon Positioning Strategy:
+ * Bell Icon Positioning Strategy
  *
  * Desktop (>899px):
- *   - JavaScript moves icon to #quick-search div (after project jump box)
- *   - Icon appears inline in header after project switcher
- *   - Dropdown positioned absolutely below icon
+ * - JavaScript moves the wrapper into #quick-search after page load
+ * - Before that move happens, the wrapper must not affect layout
+ * - Space is reserved in #quick-search to prevent header reflow
  *
  * Mobile (<=899px):
- *   - Icon stays in original DOM position (view_layouts_base_body_top hook)
- *   - CSS uses fixed positioning next to hamburger menu
- *   - Dropdown spans full width below fixed header (64px)
+ * - The icon stays in its original DOM position
+ * - CSS uses fixed positioning next to the hamburger menu
+ * - Dropdown spans full width below the fixed header
  */
 
-/* Bell icon wrapper - base styles */
+/* Base wrapper styles */
 #bell-notifications-wrapper {
   display: inline-block;
   position: relative;
@@ -23,11 +23,46 @@
   margin-right: 0;
 }
 
-/* Desktop: When icon is moved to quick-search by JavaScript */
-#quick-search #bell-notifications-wrapper {
-  margin-left: 15px;
-  margin-bottom: 10px;
-  vertical-align: bottom;
+/*
+ * Desktop:
+ * Keep the original hook output out of the normal flow until JavaScript
+ * moves it into #quick-search. This avoids the temporary top gap and
+ * page-down shift during navigation.
+ */
+@media screen and (min-width: 900px) {
+  #bell-notifications-wrapper {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    visibility: hidden;
+    margin: 0;
+  }
+
+  /*
+   * Reserve stable horizontal space in the header so the quick-search area
+   * does not change width when the bell becomes visible.
+   */
+  #quick-search {
+    position: relative;
+    padding-right: 52px;
+    box-sizing: border-box;
+  }
+
+  /*
+   * After JavaScript moves the wrapper into #quick-search, place it
+   * independently from the normal flow and reveal it.
+   */
+  #quick-search #bell-notifications-wrapper {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    left: auto;
+    visibility: visible;
+    transform: translateY(-50%);
+    margin: 0;
+    vertical-align: middle;
+    z-index: 1;
+  }
 }
 
 /* Bell icon link */
@@ -58,7 +93,7 @@
   display: inline-block;
   width: 25px;
   height: 25px;
-  background-color: #fff; /* White icon color */
+  background-color: #fff;
   -webkit-mask-image: url('../images/bell.svg');
   mask-image: url('../images/bell.svg');
   -webkit-mask-size: contain;
@@ -76,12 +111,12 @@
   opacity: 1;
 }
 
-/* Unread badge - professional notification badge style */
+/* Unread badge */
 .unread-badge {
   position: absolute;
   top: -2px;
   right: -2px;
-  background-color: #e74c3c; /* Professional red */
+  background-color: #e74c3c;
   color: #fff;
   border-radius: 7px;
   padding: 2px 4px;
@@ -95,11 +130,11 @@
   justify-content: center;
   line-height: 1;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  pointer-events: none; /* Allow clicks to pass through to bell icon */
-  opacity: 1; /* Fully solid */
+  pointer-events: none;
+  opacity: 1;
 }
 
-/* Dropdown container - follows Redmine's drdn-content pattern */
+/* Dropdown container */
 .bell-notifications-dropdown {
   position: absolute;
   top: calc(100% + 5px);
@@ -116,7 +151,7 @@
   display: block !important;
 }
 
-/* Dropdown header - uses Redmine's color scheme */
+/* Dropdown header */
 .bell-dropdown-header {
   padding: 10px 12px;
   border-bottom: 2px solid #e0e3e7;
@@ -137,7 +172,7 @@
 .bell-dropdown-header a {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #169; /* Redmine's link color */
+  color: #169;
   text-decoration: none;
   padding: 3px 8px;
   border-radius: 3px;
@@ -150,14 +185,14 @@
   text-decoration: none;
 }
 
-/* Notifications list - uses Redmine's drdn-items pattern */
+/* Notifications list */
 .bell-notifications-list {
   max-height: 440px;
   overflow-y: auto;
   padding: 0;
 }
 
-/* Section headers for Unread/Read */
+/* Section headers */
 .bell-section-header {
   padding: 8px 12px;
   background: #f0f2f5;
@@ -201,12 +236,10 @@
   top: 1px;
 }
 
-/* Collapsed state - arrow points right */
 .bell-section-header.bell-section-collapsed-state .bell-collapse-icon {
   transform: rotate(-90deg);
 }
 
-/* Hover effect for collapsible section */
 .bell-section-collapsible:hover .bell-collapse-icon {
   border-top-color: #444;
 }
@@ -230,7 +263,7 @@
   margin-top: 8px;
 }
 
-/* Individual notification - styled like Redmine's dropdown items */
+/* Individual notification */
 .bell-notification {
   display: flex;
   align-items: flex-start;
@@ -258,7 +291,7 @@
   margin-bottom: 8px;
 }
 
-/* Unread notification - subtle highlight without border */
+/* Unread notification */
 .bell-notification.unread {
   background: #f0f8ff;
   border-color: #b8d4f1;
@@ -270,7 +303,6 @@
   border-color: #a0c4e8;
 }
 
-/* Unread indicator dot */
 .bell-notification.unread::before {
   content: '';
   position: absolute;
@@ -306,12 +338,10 @@
   opacity: 0;
 }
 
-/* Only show mark as read button on unread notifications */
 .bell-notification.unread:hover .bell-notification-mark-read {
   opacity: 1;
 }
 
-/* Hide mark as read button on read notifications */
 .bell-notification:not(.unread) .bell-notification-mark-read {
   display: none;
 }
@@ -330,11 +360,11 @@
 .notification-content {
   display: block;
   flex: 1;
-  padding-right: 30px; /* Make room for the mark as read button */
+  padding-right: 30px;
 }
 
 .bell-notification.unread .notification-content {
-  padding-left: 12px; /* Make room for the unread dot */
+  padding-left: 12px;
 }
 
 .bell-notification-title {
@@ -405,40 +435,31 @@
 .bell-no-notifications p {
   margin: 0;
   font-size: 0.875rem;
+  font-weight: 400;
 }
 
-/* Mobile responsive - follows Redmine's mobile layout pattern (breakpoint: 899px) */
+/* Mobile responsive */
 @media screen and (max-width: 899px) {
   /*
-   * Mobile/Tablet: Fixed positioning in Redmine's mobile header
-   *
-   * Redmine's mobile header specs:
-   *   - position: fixed
-   *   - z-index: 9999
-   *   - height: 64px
-   *   - background: #628db6
-   *
-   * Mobile toggle button (hamburger):
-   *   - float: right
-   *   - width: 60px
-   *   - border-left separator
-   *
-   * Bell icon positioning:
-   *   - Fixed at top-right, left of hamburger menu
-   *   - Matches hamburger menu styling (border separator)
-   *   - White icon on blue header background
+   * Mobile/Tablet:
+   * - Use fixed positioning in Redmine's mobile header
+   * - Place the bell left of the hamburger menu
+   * - Keep the current mobile behavior unchanged
    */
   #bell-notifications-wrapper {
     position: fixed;
     top: 0;
-    right: 60px; /* Left of hamburger menu (60px wide) */
+    right: 60px;
+    left: auto;
+    visibility: visible;
+    transform: none;
     margin: 0;
-    z-index: 10000; /* Above header (9999) for proper layering */
-    height: 64px; /* Match Redmine's mobile header height */
+    z-index: 10000;
+    height: 64px;
     display: flex;
     align-items: center;
     padding: 0 10px;
-    border-left: 1px solid rgba(255, 255, 255, 0.2); /* Visual separator like hamburger */
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
   }
 
   #bell-notifications-menu {
@@ -457,12 +478,12 @@
   .bell-icon-container {
     width: 22px;
     height: 22px;
-    background-color: #fff; /* White icon for dark header */
+    background-color: #fff;
   }
 
   .unread-badge {
-    top: 0px;
-    right: 0px;
+    top: 0;
+    right: 0;
     min-width: 16px;
     height: 16px;
     font-size: 10px;
@@ -470,29 +491,26 @@
     font-weight: 700;
   }
 
-  /* Mobile dropdown: full-width below header */
   .bell-notifications-dropdown {
     position: fixed;
-    top: 64px; /* Below fixed header */
+    top: 64px;
     left: 0;
     right: 0;
     width: 100%;
     max-width: 100%;
-    max-height: calc(100vh - 64px); /* Full height minus header */
-    border-radius: 0; /* No rounded corners on mobile */
+    max-height: calc(100vh - 64px);
+    border-radius: 0;
     border-left: none;
     border-right: none;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   }
 
-  /* Adjust notification list height for mobile */
   .bell-notifications-list {
-    max-height: calc(100vh - 120px); /* Account for header + dropdown header */
+    max-height: calc(100vh - 120px);
   }
 }
 
 @media screen and (max-width: 480px) {
-  /* Small mobile: Slightly smaller icon */
   #bell-notifications-wrapper {
     padding: 0 8px;
   }
@@ -509,8 +527,8 @@
   }
 
   .unread-badge {
-    top: 0px;
-    right: 0px;
+    top: 0;
+    right: 0;
     min-width: 14px;
     height: 14px;
     font-size: 9px;
@@ -518,33 +536,26 @@
   }
 }
 
-/* ========================================
-   バッジの状態ごとのスタイル
-   ======================================== */
-
-/* 1. 待ち受け中（通信中・初期状態） */
+/* Badge state styles */
 .unread-badge.state-loading {
-  background-color: #f39c12; /* オレンジ系 */
+  background-color: #f39c12;
   opacity: 0.8;
 }
 
-/* 2. 新着なし（未読 0件） */
 .unread-badge.state-none {
-  background-color: #95a5a6; /* グレー系 */
+  background-color: #95a5a6;
   opacity: 0.6;
 }
 
-/* 3. 新着あり（未読 1件以上）※既存のスタイルを上書き */
 .unread-badge.state-has-unread {
-  background-color: #e74c3c; /* 赤系 */
+  background-color: #e74c3c;
   opacity: 1;
 }
 
-/* 4. セッション切れ */
 .unread-badge.state-expired {
-  background-color: #34495e; /* ダークグレー系 */
+  background-color: #34495e;
   opacity: 0.9;
-  border: 1px solid #fff; /* 少し目立たせるための枠線 */
+  border: 1px solid #fff;
 }
 
 /* Theme compatibility - Inherits from Redmine's theme system */
