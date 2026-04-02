@@ -8,7 +8,8 @@
     MAX_POLLING_FAILURES: 3,          // Stop polling after this many consecutive failures
     POLLING_RETRY_DELAY_MS: 300000,   // Retry delay after max failures (5 minutes)
     MAX_BADGE_DISPLAY_COUNT: 99,      // Maximum count to show in badge (shows "99+" if more)
-    MARK_ALL_FEEDBACK_DURATION_MS: 1500 // Duration to show "Done!" feedback
+    MARK_ALL_FEEDBACK_DURATION_MS: 1500, // Duration to show "Done!" feedback
+    CHANNEL_NAME: 'redmine_bell_notifications_sync' // 追加: タブ間通信用のチャンネル名
   };
 
   var BellNotifications = {
@@ -19,6 +20,8 @@
     maxFailures: CONSTANTS.MAX_POLLING_FAILURES,
     backoffMultiplier: 1, // Exponential backoff multiplier
     resizeListenerAdded: false, // Flag to prevent duplicate resize listeners
+    channel: null, // 追加: BroadcastChannel用変数
+    sessionExpired: false, // 追加: セッション切れフラグ
 
     getMetaContent: function(name) {
       var meta = document.querySelector('meta[name="' + name + '"]');
@@ -69,6 +72,9 @@
     start: function() {
       this.positionBellIcon();
       this.setupResizeListener();
+      this.setupTabSync();           // 追加: タブ同期のセットアップ
+      this.setupVisibilityListener();// 追加: タブ表示/非表示の検知
+      this.renderBadge();            // 追加: まずDOM上に「待ち受け中」バッジを生成する
       this.updateUnreadCount();
       this.startPolling();
       this.bindEvents();
@@ -89,7 +95,7 @@
 
       var bellWrapper = document.getElementById('bell-notifications-wrapper');
       if (!bellWrapper) {
-        console.warn('BellNotifications: Could not find bell wrapper');
+        //console.warn('BellNotifications: Could not find bell wrapper');
         return;
       }
 
@@ -130,8 +136,10 @@
     },
 
     updateUnreadCount: function() {
+      // 追加: 既にセッション切れを検知している場合は何もしない
+      if (this.sessionExpired) return;
+      
       var self = this;
-
       fetch(this.getUnreadCountUrl(), {
         method: 'GET',
         headers: {
@@ -140,23 +148,49 @@
         }
       })
       .then(function(response) {
+        // 追加: 明示的な認証エラー(401)や権限エラー(403)を検知
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Session Expired');
+        }
         if (!response.ok) {
           throw new Error('HTTP error ' + response.status);
         }
         return response.json();
       })
+      
       .then(function(data) {
         self.renderBadge(data.count);
         // Reset failure count on success
         self.failureCount = 0;
         self.backoffMultiplier = 1;
+        
+        // 追加: 取得した最新の未読数を他のタブに共有する
+        if (self.channel) {
+          self.channel.postMessage({ count: data.count });
+        }
       })
       .catch(function(error) {
-        console.error('BellNotifications: Error fetching unread count:', error);
-        self.handleFetchError();
+        // 修正: エラーの種類に応じて処理を分岐
+        if (error.message === 'Session Expired' || error.name === 'SyntaxError') {
+          // SyntaxErrorは、Redmineがログイン画面(HTML)を返してきてJSONパースに失敗した場合
+          console.warn('BellNotifications: Session expired. Stopping polling.');
+          self.handleSessionExpired();
+        } else {
+          console.error('BellNotifications: Error fetching unread count:', error);
+          self.handleFetchError();
+        }
       });
     },
-
+    
+    // 追加: セッション切れ時の処理
+    handleSessionExpired: function() {
+      this.sessionExpired = true;
+      this.stopPolling();
+      
+      // セッション切れのステータスでバッジを再描画
+      this.renderBadge(null, 'expired');
+    },
+    
     handleFetchError: function() {
       this.failureCount++;
 
@@ -177,30 +211,44 @@
       }
     },
 
-    renderBadge: function(count) {
+    // 変更: 引数に state を追加
+    renderBadge: function(count, state) {
       var menu = document.getElementById('bell-notifications-menu');
       if (!menu) return;
 
       var badge = menu.querySelector('.unread-badge');
 
-      // Always show badge, even when count is 0
+      // バッジ要素がなければ作成（初期生成時は「待ち受け中」）
       if (!badge) {
         badge = document.createElement('span');
-        badge.className = 'unread-badge';
+        badge.className = 'unread-badge state-loading'; // 初期クラス
+        badge.textContent = '...'; // 通信中を示すテキスト
         menu.appendChild(badge);
       }
 
-      badge.textContent = count > CONSTANTS.MAX_BADGE_DISPLAY_COUNT
-        ? CONSTANTS.MAX_BADGE_DISPLAY_COUNT + '+'
-        : count.toString();
-      badge.style.display = 'inline-block';
-
-      // Optional: dim the badge when count is 0
-      if (count === 0) {
-        badge.style.opacity = '0.5';
-      } else {
-        badge.style.opacity = '1';
+      // 特殊な状態（セッション切れ）のハンドリング
+      if (state === 'expired') {
+        badge.className = 'unread-badge state-expired';
+        badge.textContent = '!'; // セッション切れを示すアイコン代わり
+        badge.title = 'Session Expired';
+        return;
       }
+
+      // 通常の件数更新のハンドリング
+      if (typeof count !== 'undefined' && count !== null) {
+        badge.textContent = count > CONSTANTS.MAX_BADGE_DISPLAY_COUNT
+          ? CONSTANTS.MAX_BADGE_DISPLAY_COUNT + '+'
+          : count.toString();
+        
+        // 件数に応じてクラスを切り替え
+        if (count === 0) {
+          badge.className = 'unread-badge state-none';
+        } else {
+          badge.className = 'unread-badge state-has-unread';
+        }
+      }
+
+      badge.style.display = 'inline-block';
     },
 
     startPolling: function() {
@@ -210,7 +258,10 @@
       if (this.pollingIntervalId) {
         clearInterval(this.pollingIntervalId);
       }
-
+      
+      // 追加: 非表示タブではポーリングを開始しない
+      if (document.hidden) return;
+      
       this.pollingIntervalId = setInterval(function() {
         self.updateUnreadCount();
       }, this.pollInterval);
@@ -223,6 +274,35 @@
       }
     },
 
+    setupTabSync: function() {
+      // 古いブラウザ（IEなど）はサポートしていないためのフォールバック
+      if (typeof BroadcastChannel !== 'undefined') {
+        this.channel = new BroadcastChannel(CONSTANTS.CHANNEL_NAME);
+        var self = this;
+        
+        // 他のタブからメッセージを受け取った時の処理
+        this.channel.onmessage = function(event) {
+          if (event.data && typeof event.data.count !== 'undefined') {
+            self.renderBadge(event.data.count);
+          }
+        };
+      }
+    },
+
+    setupVisibilityListener: function() {
+      var self = this;
+      document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+          // タブが隠れたらポーリングを停止して負荷を減らす
+          self.stopPolling();
+        } else {
+          // タブがアクティブになったら即座に最新を取得し、ポーリングを再開する
+          self.updateUnreadCount();
+          self.startPolling();
+        }
+      });
+    },
+    
     bindEvents: function() {
       var self = this;
 

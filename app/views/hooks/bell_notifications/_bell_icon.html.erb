@@ -1,4 +1,4 @@
-<% if User.current.logged? %>
+<% if User.current.logged? && User.current.mail_notification != 'none' %>
   <div id="bell-notifications-wrapper">
     <a href="#" id="bell-notifications-menu" class="bell-icon-link" title="<%= l(:label_notifications) %>">
       <span class="bell-icon-container"></span>
