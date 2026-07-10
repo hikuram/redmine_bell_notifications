@@ -8,7 +8,7 @@ Redmine::Plugin.register :redmine_bell_notifications do
   url 'https://github.com/Akshaychdev/redmine_bell_notifications'
   author_url 'https://github.com/Akshaychdev'
 
-  requires_redmine version_or_higher: '6.0.0', version_or_lower: '7.0.99'
+  requires_redmine version_or_higher: '6.0.0'
 
   # Plugin settings
   settings default: {
