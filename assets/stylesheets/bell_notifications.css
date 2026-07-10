@@ -463,6 +463,16 @@
     border-left: 1px solid rgba(255, 255, 255, 0.2);
   }
 
+  /*
+   * Redmine themes may place the responsive flyout in a different stacking
+   * context from the fixed header. Hide the bell while that menu is open
+   * instead of competing with theme-specific z-index values.
+   */
+  #bell-notifications-wrapper.bell-hidden-for-redmine-menu {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
   #bell-notifications-menu {
     padding: 8px;
     width: 40px;
