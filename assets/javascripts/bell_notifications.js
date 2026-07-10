@@ -20,6 +20,8 @@
     maxFailures: CONSTANTS.MAX_POLLING_FAILURES,
     backoffMultiplier: 1, // Exponential backoff multiplier
     resizeListenerAdded: false, // Flag to prevent duplicate resize listeners
+    mobileMenuSyncAdded: false, // Prevent duplicate mobile menu listeners
+    mobileMenuOpen: false, // Track Redmine's responsive flyout state
     originalBellParent: null, // Original hook position before responsive moves
     originalBellNextSibling: null, // Restore point for fallback placement
     channel: null, // 追加: BroadcastChannel用変数
@@ -74,6 +76,7 @@
     start: function() {
       this.positionBellIcon();
       this.setupResizeListener();
+      this.setupMobileMenuSync();
       this.setupTabSync();           // 追加: タブ同期のセットアップ
       this.setupVisibilityListener();// 追加: タブ表示/非表示の検知
       this.renderBadge();            // 追加: まずDOM上に「待ち受け中」バッジを生成する
@@ -163,10 +166,95 @@
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(function() {
           self.positionBellIcon();
+          if (window.innerWidth > 899) {
+            self.mobileMenuOpen = false;
+          }
+          self.applyMobileMenuVisibility();
         }, CONSTANTS.RESIZE_DEBOUNCE_MS);
       });
 
       this.resizeListenerAdded = true;
+    },
+
+    setupMobileMenuSync: function() {
+      if (this.mobileMenuSyncAdded) {
+        return;
+      }
+
+      var self = this;
+      var toggleSelector = '.js-flyout-menu-toggle-button, .mobile-toggle-button';
+
+      document.addEventListener('click', function(event) {
+        var toggle = event.target.closest(toggleSelector);
+        if (!toggle || window.innerWidth > 899) {
+          return;
+        }
+
+        // Let Redmine update its classes and ARIA state first.
+        window.setTimeout(function() {
+          var detectedState = self.detectMobileMenuOpen(toggle);
+          self.mobileMenuOpen = detectedState === null
+            ? !self.mobileMenuOpen
+            : detectedState;
+
+          if (self.mobileMenuOpen && self.dropdownOpen) {
+            self.closeDropdown();
+          }
+          self.applyMobileMenuVisibility();
+        }, 0);
+      });
+
+      document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape' && self.mobileMenuOpen) {
+          self.mobileMenuOpen = false;
+          self.applyMobileMenuVisibility();
+        }
+      });
+
+      this.mobileMenuSyncAdded = true;
+      this.applyMobileMenuVisibility();
+    },
+
+    detectMobileMenuOpen: function(toggle) {
+      var expanded = toggle ? toggle.getAttribute('aria-expanded') : null;
+      if (expanded === 'true') {
+        return true;
+      }
+      if (expanded === 'false') {
+        return false;
+      }
+
+      var flyout = document.querySelector('.js-flyout-menu, .flyout-menu');
+      if (!flyout) {
+        return null;
+      }
+
+      var style = window.getComputedStyle(flyout);
+      var rect = flyout.getBoundingClientRect();
+      var visible = style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        parseFloat(style.opacity || '1') > 0 &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.right > 0 &&
+        rect.left < window.innerWidth &&
+        rect.bottom > 0 &&
+        rect.top < window.innerHeight;
+
+      return visible;
+    },
+
+    applyMobileMenuVisibility: function() {
+      var bellWrapper = document.getElementById('bell-notifications-wrapper');
+      if (!bellWrapper) {
+        return;
+      }
+
+      var shouldHide = window.innerWidth <= 899 && this.mobileMenuOpen;
+      bellWrapper.classList.toggle(
+        'bell-hidden-for-redmine-menu',
+        shouldHide
+      );
     },
 
     updateUnreadCount: function() {
