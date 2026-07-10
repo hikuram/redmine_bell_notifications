@@ -9,8 +9,9 @@
  * - Space is reserved in #quick-search to prevent header reflow
  *
  * Mobile (<=899px):
- * - The icon stays in its original DOM position
+ * - JavaScript moves the wrapper into Redmine's #header
  * - CSS uses fixed positioning next to the hamburger menu
+ * - The wrapper shares the standard header stacking context
  * - Dropdown spans full width below the fixed header
  */
 
@@ -61,7 +62,7 @@
     transform: translateY(-50%);
     margin: 0;
     vertical-align: middle;
-    z-index: 1;
+    z-index: 0;
   }
 }
 
@@ -442,9 +443,9 @@
 @media screen and (max-width: 899px) {
   /*
    * Mobile/Tablet:
-   * - Use fixed positioning in Redmine's mobile header
-   * - Place the bell left of the hamburger menu
-   * - Keep the current mobile behavior unchanged
+   * - JavaScript places the wrapper inside Redmine's #header
+   * - Use fixed positioning left of the hamburger menu
+   * - Keep the wrapper below Redmine's expanded menus
    */
   #bell-notifications-wrapper {
     position: fixed;
@@ -454,7 +455,7 @@
     visibility: visible;
     transform: none;
     margin: 0;
-    z-index: 10000;
+    z-index: 0;
     height: 64px;
     display: flex;
     align-items: center;
@@ -561,3 +562,8 @@
 /* Theme compatibility - Inherits from Redmine's theme system */
 /* Dark themes will automatically work through Redmine's theme CSS variables */
 /* Alternative themes will work by inheriting colors from the active theme */
+
+/* Hide bell controls while Redmine's mobile flyout menu is open */
+#bell-notifications-wrapper.bell-hidden-for-redmine-menu {
+  display: none !important;
+}

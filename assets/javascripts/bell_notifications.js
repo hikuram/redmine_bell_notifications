@@ -9,19 +9,23 @@
     POLLING_RETRY_DELAY_MS: 300000,   // Retry delay after max failures (5 minutes)
     MAX_BADGE_DISPLAY_COUNT: 99,      // Maximum count to show in badge (shows "99+" if more)
     MARK_ALL_FEEDBACK_DURATION_MS: 1500, // Duration to show "Done!" feedback
-    CHANNEL_NAME: 'redmine_bell_notifications_sync' // 追加: タブ間通信用のチャンネル名
+    CHANNEL_NAME: 'redmine_bell_notifications_sync' // Cross-tab synchronization channel
   };
 
   var BellNotifications = {
     pollInterval: CONSTANTS.POLL_INTERVAL_MS,
-    pollingIntervalId: null, // Store interval ID to prevent memory leaks
+    pollingIntervalId: null,
     dropdownOpen: false,
-    failureCount: 0, // Track consecutive failures
+    failureCount: 0,
     maxFailures: CONSTANTS.MAX_POLLING_FAILURES,
-    backoffMultiplier: 1, // Exponential backoff multiplier
-    resizeListenerAdded: false, // Flag to prevent duplicate resize listeners
-    channel: null, // 追加: BroadcastChannel用変数
-    sessionExpired: false, // 追加: セッション切れフラグ
+    backoffMultiplier: 1,
+    resizeListenerAdded: false,
+    mobileMenuSyncAdded: false,
+    mobileMenuObserver: null,
+    originalBellParent: null,
+    originalBellNextSibling: null,
+    channel: null,
+    sessionExpired: false,
 
     getMetaContent: function(name) {
       var meta = document.querySelector('meta[name="' + name + '"]');
@@ -72,53 +76,79 @@
     start: function() {
       this.positionBellIcon();
       this.setupResizeListener();
-      this.setupTabSync();           // 追加: タブ同期のセットアップ
-      this.setupVisibilityListener();// 追加: タブ表示/非表示の検知
-      this.renderBadge();            // 追加: まずDOM上に「待ち受け中」バッジを生成する
+      this.setupMobileMenuSync();
+      this.setupTabSync();
+      this.setupVisibilityListener();
+      this.renderBadge();
       this.updateUnreadCount();
       this.startPolling();
       this.bindEvents();
     },
 
     positionBellIcon: function() {
-      // Position bell icon based on screen size using Redmine's 899px breakpoint
-      //
-      // Desktop (>899px):
-      //   - Moves icon to #quick-search div (after project jump box)
-      //   - Icon appears inline after project switcher in header
-      //   - Dropdown positioned absolutely below the icon
-      //
-      // Mobile (<=899px):
-      //   - Keeps icon in original DOM position (view_layouts_base_body_top hook)
-      //   - CSS applies fixed positioning next to hamburger menu
-      //   - Dropdown spans full width below fixed header
+      // Redmine switches responsive layouts at 899px. Move the bell into
+      // #quick-search on desktop and #header on narrow screens.
 
       var bellWrapper = document.getElementById('bell-notifications-wrapper');
       if (!bellWrapper) {
-        //console.warn('BellNotifications: Could not find bell wrapper');
         return;
       }
 
-      // Check if we're on mobile (same breakpoint as Redmine's responsive.css)
+      // Remember the hook output position before moving the wrapper.
+      if (!this.originalBellParent) {
+        this.originalBellParent = bellWrapper.parentNode;
+        this.originalBellNextSibling = bellWrapper.nextSibling;
+      }
+
       var isMobile = window.innerWidth <= 899;
 
       if (isMobile) {
-        // Mobile: Keep wrapper in its original DOM position
-        // CSS (media query) handles fixed positioning at top-right next to hamburger menu
+        var mobileToggle = document.querySelector(
+          '.js-flyout-menu-toggle-button, .mobile-toggle-button'
+        );
+        var mobileHeader = (
+          mobileToggle && mobileToggle.closest('#header, header')
+        ) || document.getElementById('header');
+
+        if (mobileHeader) {
+          if (bellWrapper.parentNode !== mobileHeader) {
+            mobileHeader.appendChild(bellWrapper);
+          }
+        } else {
+          this.restoreBellIconPosition(bellWrapper);
+        }
       } else {
-        // Desktop: Move to quick-search area in header
         var quickSearch = document.getElementById('quick-search');
         if (quickSearch) {
-          // Append bell icon after the project jump box in quick-search
-          quickSearch.appendChild(bellWrapper);
+          if (bellWrapper.parentNode !== quickSearch) {
+            quickSearch.appendChild(bellWrapper);
+          }
         } else {
+          this.restoreBellIconPosition(bellWrapper);
           console.warn('BellNotifications: Could not find quick-search element');
         }
       }
     },
 
+    restoreBellIconPosition: function(bellWrapper) {
+      if (!this.originalBellParent) {
+        return;
+      }
+
+      if (
+        this.originalBellNextSibling &&
+        this.originalBellNextSibling.parentNode === this.originalBellParent
+      ) {
+        this.originalBellParent.insertBefore(
+          bellWrapper,
+          this.originalBellNextSibling
+        );
+      } else {
+        this.originalBellParent.appendChild(bellWrapper);
+      }
+    },
+
     setupResizeListener: function() {
-      // Set up resize listener only once to prevent memory leaks
       if (this.resizeListenerAdded) {
         return;
       }
@@ -129,16 +159,62 @@
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(function() {
           self.positionBellIcon();
+          self.applyMobileMenuVisibility();
         }, CONSTANTS.RESIZE_DEBOUNCE_MS);
       });
 
       this.resizeListenerAdded = true;
     },
 
+    setupMobileMenuSync: function() {
+      if (this.mobileMenuSyncAdded) {
+        return;
+      }
+
+      var self = this;
+      var root = document.documentElement;
+      if (!root) {
+        return;
+      }
+
+      this.mobileMenuObserver = new MutationObserver(function() {
+        self.applyMobileMenuVisibility();
+      });
+
+      this.mobileMenuObserver.observe(root, {
+        attributes: true,
+        attributeFilter: ['class']
+      });
+
+      this.mobileMenuSyncAdded = true;
+      this.applyMobileMenuVisibility();
+    },
+
+    applyMobileMenuVisibility: function() {
+      var bellWrapper = document.getElementById('bell-notifications-wrapper');
+      if (!bellWrapper) {
+        return;
+      }
+
+      var mobileMenuOpen = document.documentElement.classList.contains(
+        'flyout-is-active'
+      );
+      var shouldHide = window.innerWidth <= 899 && mobileMenuOpen;
+
+      if (shouldHide && this.dropdownOpen) {
+        this.closeDropdown();
+      }
+
+      bellWrapper.classList.toggle(
+        'bell-hidden-for-redmine-menu',
+        shouldHide
+      );
+    },
+
     updateUnreadCount: function() {
-      // 追加: 既にセッション切れを検知している場合は何もしない
+      // Stop requesting updates after the session expires.
       if (this.sessionExpired) return;
-      
+
       var self = this;
       fetch(this.getUnreadCountUrl(), {
         method: 'GET',
@@ -148,7 +224,7 @@
         }
       })
       .then(function(response) {
-        // 追加: 明示的な認証エラー(401)や権限エラー(403)を検知
+
         if (response.status === 401 || response.status === 403) {
           throw new Error('Session Expired');
         }
@@ -157,22 +233,21 @@
         }
         return response.json();
       })
-      
+
       .then(function(data) {
         self.renderBadge(data.count);
-        // Reset failure count on success
         self.failureCount = 0;
         self.backoffMultiplier = 1;
-        
-        // 追加: 取得した最新の未読数を他のタブに共有する
+
+        // Keep unread counts synchronized across tabs.
         if (self.channel) {
           self.channel.postMessage({ count: data.count });
         }
       })
       .catch(function(error) {
-        // 修正: エラーの種類に応じて処理を分岐
+
         if (error.message === 'Session Expired' || error.name === 'SyntaxError') {
-          // SyntaxErrorは、Redmineがログイン画面(HTML)を返してきてJSONパースに失敗した場合
+          // Redmine may return login-page HTML after session expiry, causing JSON parsing to fail.
           console.warn('BellNotifications: Session expired. Stopping polling.');
           self.handleSessionExpired();
         } else {
@@ -181,16 +256,14 @@
         }
       });
     },
-    
-    // 追加: セッション切れ時の処理
+
     handleSessionExpired: function() {
       this.sessionExpired = true;
       this.stopPolling();
-      
-      // セッション切れのステータスでバッジを再描画
+
       this.renderBadge(null, 'expired');
     },
-    
+
     handleFetchError: function() {
       this.failureCount++;
 
@@ -211,36 +284,32 @@
       }
     },
 
-    // 変更: 引数に state を追加
     renderBadge: function(count, state) {
       var menu = document.getElementById('bell-notifications-menu');
       if (!menu) return;
 
       var badge = menu.querySelector('.unread-badge');
 
-      // バッジ要素がなければ作成（初期生成時は「待ち受け中」）
+      // Create a loading badge before the first response arrives.
       if (!badge) {
         badge = document.createElement('span');
-        badge.className = 'unread-badge state-loading'; // 初期クラス
-        badge.textContent = '...'; // 通信中を示すテキスト
+        badge.className = 'unread-badge state-loading';
+        badge.textContent = '...';
         menu.appendChild(badge);
       }
 
-      // 特殊な状態（セッション切れ）のハンドリング
       if (state === 'expired') {
         badge.className = 'unread-badge state-expired';
-        badge.textContent = '!'; // セッション切れを示すアイコン代わり
+        badge.textContent = '!';
         badge.title = 'Session Expired';
         return;
       }
 
-      // 通常の件数更新のハンドリング
       if (typeof count !== 'undefined' && count !== null) {
         badge.textContent = count > CONSTANTS.MAX_BADGE_DISPLAY_COUNT
           ? CONSTANTS.MAX_BADGE_DISPLAY_COUNT + '+'
           : count.toString();
-        
-        // 件数に応じてクラスを切り替え
+
         if (count === 0) {
           badge.className = 'unread-badge state-none';
         } else {
@@ -254,14 +323,13 @@
     startPolling: function() {
       var self = this;
 
-      // Clear any existing polling to prevent multiple intervals
       if (this.pollingIntervalId) {
         clearInterval(this.pollingIntervalId);
       }
-      
-      // 追加: 非表示タブではポーリングを開始しない
+
+      // Do not poll from background tabs.
       if (document.hidden) return;
-      
+
       this.pollingIntervalId = setInterval(function() {
         self.updateUnreadCount();
       }, this.pollInterval);
@@ -275,12 +343,11 @@
     },
 
     setupTabSync: function() {
-      // 古いブラウザ（IEなど）はサポートしていないためのフォールバック
+      // Cross-tab sync is optional when BroadcastChannel is unavailable.
       if (typeof BroadcastChannel !== 'undefined') {
         this.channel = new BroadcastChannel(CONSTANTS.CHANNEL_NAME);
         var self = this;
-        
-        // 他のタブからメッセージを受け取った時の処理
+
         this.channel.onmessage = function(event) {
           if (event.data && typeof event.data.count !== 'undefined') {
             self.renderBadge(event.data.count);
@@ -291,18 +358,17 @@
 
     setupVisibilityListener: function() {
       var self = this;
+      // Pause polling in background tabs and refresh immediately on return.
       document.addEventListener('visibilitychange', function() {
         if (document.hidden) {
-          // タブが隠れたらポーリングを停止して負荷を減らす
           self.stopPolling();
         } else {
-          // タブがアクティブになったら即座に最新を取得し、ポーリングを再開する
           self.updateUnreadCount();
           self.startPolling();
         }
       });
     },
-    
+
     bindEvents: function() {
       var self = this;
 
@@ -371,7 +437,6 @@
         return;
       }
 
-      // Mark as read without navigation
       fetch(this.getMarkReadUrl(notificationId), {
         method: 'PUT',
         headers: {
@@ -388,7 +453,6 @@
         if (data.success && notification) {
           // Move notification to read section instead of removing
           self.moveNotificationToReadSection(notification);
-          // Update the unread count
           self.updateUnreadCount();
         }
       })
@@ -423,10 +487,8 @@
 
       if (!button) return;
 
-      // Store original text
       var originalText = button.textContent;
 
-      // Show loading state
       button.textContent = 'Marking...';
       button.style.opacity = '0.6';
       button.style.pointerEvents = 'none';
@@ -445,13 +507,11 @@
       })
       .then(function(data) {
         if (data.success) {
-          // Show success feedback
           button.textContent = 'Done!';
           button.style.backgroundColor = '#28a745';
           button.style.color = '#fff';
           button.style.opacity = '1';
 
-          // Move all unread notifications to read section
           var unreadSection = document.getElementById('bell-unread-section');
           if (unreadSection) {
             var unreadNotifications = unreadSection.querySelectorAll('.bell-notification');
@@ -462,7 +522,6 @@
 
           self.updateUnreadCount();
 
-          // Reset button after feedback duration
           setTimeout(function() {
             button.textContent = originalText;
             button.style.backgroundColor = '';
@@ -473,7 +532,6 @@
       })
       .catch(function(error) {
         console.error('BellNotifications: Error marking all as read:', error);
-        // Reset button on error
         button.textContent = originalText;
         button.style.opacity = '1';
         button.style.pointerEvents = '';
@@ -483,15 +541,13 @@
     moveNotificationToReadSection: function(notification) {
       if (!notification) return;
 
-      // Remove unread styling
       notification.classList.remove('unread');
 
-      // Get or create read section
       var readSection = document.getElementById('bell-read-section');
       var unreadSection = document.getElementById('bell-unread-section');
 
       if (!readSection) {
-        // Create read section if it doesn't exist
+        // Create the read section lazily.
         var dropdownList = document.querySelector('.bell-notifications-list');
         if (dropdownList) {
           var readSectionHTML = '<div class="bell-section-header bell-section-collapsible bell-section-collapsed-state" id="bell-read-toggle">' +
@@ -504,24 +560,19 @@
       }
 
       if (readSection) {
-        // Add fade effect
         notification.style.opacity = '0.5';
         setTimeout(function() {
-          // Move to read section
           readSection.insertBefore(notification, readSection.firstChild);
           notification.style.opacity = '1';
 
-          // Update counts
           var unreadCount = unreadSection ? unreadSection.querySelectorAll('.bell-notification').length : 0;
           var readCount = readSection.querySelectorAll('.bell-notification').length;
 
-          // Update unread count display
           var unreadCountSpan = document.getElementById('bell-unread-count');
           if (unreadCountSpan) {
             unreadCountSpan.textContent = unreadCount;
           }
 
-          // Update read section header count
           var readToggle = document.getElementById('bell-read-toggle');
           if (readToggle) {
             var readTitle = readToggle.querySelector('h5');
@@ -530,7 +581,6 @@
             }
           }
 
-          // Hide unread section if empty
           if (unreadCount === 0 && unreadSection) {
             var unreadHeader = unreadSection.previousElementSibling;
             if (unreadHeader && unreadHeader.classList.contains('bell-section-header')) {
@@ -538,7 +588,6 @@
             }
             unreadSection.style.display = 'none';
 
-            // Hide mark all as read button
             var markAllBtn = document.getElementById('bell-mark-all-read');
             if (markAllBtn) {
               markAllBtn.style.display = 'none';
@@ -555,10 +604,8 @@
       if (readSection && readToggle) {
         var isCollapsed = readSection.classList.contains('bell-section-collapsed');
 
-        // Toggle collapsed state
         readSection.classList.toggle('bell-section-collapsed');
 
-        // Toggle class on header to control arrow direction
         if (isCollapsed) {
           readToggle.classList.remove('bell-section-collapsed-state');
         } else {
@@ -588,22 +635,19 @@
         return response.text();
       })
       .then(function(html) {
-        // Remove any existing dropdown
         var existing = document.querySelector('.bell-notifications-dropdown');
         if (existing) {
           existing.remove();
         }
 
-        // Insert dropdown HTML relative to the bell menu item
         var menu = document.getElementById('bell-notifications-menu');
         if (menu) {
-          // Create a container that will be positioned relative to the icon
+          // Wrap the dropdown so it can be positioned relative to the bell.
           var container = document.createElement('div');
           container.style.position = 'relative';
           container.style.display = 'inline-block';
           container.innerHTML = html;
 
-          // Insert after the bell icon
           menu.parentNode.insertBefore(container, menu.nextSibling);
           self.dropdownOpen = true;
         } else {
@@ -618,7 +662,6 @@
     closeDropdown: function() {
       var dropdown = document.querySelector('.bell-notifications-dropdown');
       if (dropdown) {
-        // Remove the parent container that was created
         var parent = dropdown.parentNode;
         if (parent && parent.parentNode) {
           parent.remove();
@@ -635,7 +678,6 @@
     }
   };
 
-  // Initialize when script loads
   BellNotifications.init();
 
   // Expose to global scope if needed
