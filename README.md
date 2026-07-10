@@ -17,6 +17,15 @@ The plugin intercepts Redmine's email notification system and creates in-app bel
 
 > **⚠️ IMPORTANT: This plugin is entirely developed using AI tools including GitHub Copilot and Claude. Please review the code and test thoroughly before using in production.**
 
+## Compatibility
+
+Supported Redmine versions:
+
+- Redmine 6.x
+- Redmine 7.0.x
+
+Verified with Redmine 7.0.0.stable / Ruby 4.0.5-p0 / Rails 8.1.3.
+
 <img src="images/README/dsk_bell_icon.png" alt="Desktop Bell Icon" width="600px" height="auto">
 
 <img src="images/README/dsk_expanded.png" alt="Desktop Expanded" width="300px" height="auto"> <img src="images/README/mobile_expanded.png" alt="Mobile Expanded" width="300px" height="auto">
