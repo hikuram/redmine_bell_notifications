@@ -2,13 +2,13 @@ require File.expand_path('../lib/redmine_bell_notifications', __FILE__)
 
 Redmine::Plugin.register :redmine_bell_notifications do
   name 'Redmine Bell Notifications'
-  author 'Akshaychdev'
+  author 'Akshaychdev, customized'
   description 'In-app notification system with bell icon and dropdown. Follows email notification preferences.'
-  version '1.0.0'
+  version '1.1.0-custom'
   url 'https://github.com/Akshaychdev/redmine_bell_notifications'
   author_url 'https://github.com/Akshaychdev'
 
-  requires_redmine version_or_higher: '6.0.0'
+  requires_redmine version_or_higher: '6.0.0', version_or_lower: '7.0.99'
 
   # Plugin settings
   settings default: {
