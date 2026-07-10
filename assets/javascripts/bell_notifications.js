@@ -20,8 +20,8 @@
     maxFailures: CONSTANTS.MAX_POLLING_FAILURES,
     backoffMultiplier: 1, // Exponential backoff multiplier
     resizeListenerAdded: false, // Flag to prevent duplicate resize listeners
-    mobileMenuSyncAdded: false, // Prevent duplicate mobile menu listeners
-    mobileMenuOpen: false, // Track Redmine's responsive flyout state
+    mobileMenuSyncAdded: false, // Prevent duplicate mobile menu observers
+    mobileMenuObserver: null, // Observe Redmine's responsive flyout state
     originalBellParent: null, // Original hook position before responsive moves
     originalBellNextSibling: null, // Restore point for fallback placement
     channel: null, // 追加: BroadcastChannel用変数
@@ -166,9 +166,6 @@
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(function() {
           self.positionBellIcon();
-          if (window.innerWidth > 899) {
-            self.mobileMenuOpen = false;
-          }
           self.applyMobileMenuVisibility();
         }, CONSTANTS.RESIZE_DEBOUNCE_MS);
       });
@@ -182,66 +179,22 @@
       }
 
       var self = this;
-      var toggleSelector = '.js-flyout-menu-toggle-button, .mobile-toggle-button';
+      var root = document.documentElement;
+      if (!root) {
+        return;
+      }
 
-      document.addEventListener('click', function(event) {
-        var toggle = event.target.closest(toggleSelector);
-        if (!toggle || window.innerWidth > 899) {
-          return;
-        }
-
-        // Let Redmine update its classes and ARIA state first.
-        window.setTimeout(function() {
-          var detectedState = self.detectMobileMenuOpen(toggle);
-          self.mobileMenuOpen = detectedState === null
-            ? !self.mobileMenuOpen
-            : detectedState;
-
-          if (self.mobileMenuOpen && self.dropdownOpen) {
-            self.closeDropdown();
-          }
-          self.applyMobileMenuVisibility();
-        }, 0);
+      this.mobileMenuObserver = new MutationObserver(function() {
+        self.applyMobileMenuVisibility();
       });
 
-      document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape' && self.mobileMenuOpen) {
-          self.mobileMenuOpen = false;
-          self.applyMobileMenuVisibility();
-        }
+      this.mobileMenuObserver.observe(root, {
+        attributes: true,
+        attributeFilter: ['class']
       });
 
       this.mobileMenuSyncAdded = true;
       this.applyMobileMenuVisibility();
-    },
-
-    detectMobileMenuOpen: function(toggle) {
-      var expanded = toggle ? toggle.getAttribute('aria-expanded') : null;
-      if (expanded === 'true') {
-        return true;
-      }
-      if (expanded === 'false') {
-        return false;
-      }
-
-      var flyout = document.querySelector('.js-flyout-menu, .flyout-menu');
-      if (!flyout) {
-        return null;
-      }
-
-      var style = window.getComputedStyle(flyout);
-      var rect = flyout.getBoundingClientRect();
-      var visible = style.display !== 'none' &&
-        style.visibility !== 'hidden' &&
-        parseFloat(style.opacity || '1') > 0 &&
-        rect.width > 0 &&
-        rect.height > 0 &&
-        rect.right > 0 &&
-        rect.left < window.innerWidth &&
-        rect.bottom > 0 &&
-        rect.top < window.innerHeight;
-
-      return visible;
     },
 
     applyMobileMenuVisibility: function() {
@@ -250,7 +203,15 @@
         return;
       }
 
-      var shouldHide = window.innerWidth <= 899 && this.mobileMenuOpen;
+      var mobileMenuOpen = document.documentElement.classList.contains(
+        'flyout-is-active'
+      );
+      var shouldHide = window.innerWidth <= 899 && mobileMenuOpen;
+
+      if (shouldHide && this.dropdownOpen) {
+        this.closeDropdown();
+      }
+
       bellWrapper.classList.toggle(
         'bell-hidden-for-redmine-menu',
         shouldHide
