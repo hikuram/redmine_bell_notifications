@@ -20,6 +20,8 @@
     maxFailures: CONSTANTS.MAX_POLLING_FAILURES,
     backoffMultiplier: 1, // Exponential backoff multiplier
     resizeListenerAdded: false, // Flag to prevent duplicate resize listeners
+    originalBellParent: null, // Original hook position before responsive moves
+    originalBellNextSibling: null, // Restore point for fallback placement
     channel: null, // 追加: BroadcastChannel用変数
     sessionExpired: false, // 追加: セッション切れフラグ
 
@@ -84,36 +86,68 @@
       // Position bell icon based on screen size using Redmine's 899px breakpoint
       //
       // Desktop (>899px):
-      //   - Moves icon to #quick-search div (after project jump box)
-      //   - Icon appears inline after project switcher in header
-      //   - Dropdown positioned absolutely below the icon
+      //   - Moves the icon into #quick-search
       //
       // Mobile (<=899px):
-      //   - Keeps icon in original DOM position (view_layouts_base_body_top hook)
-      //   - CSS applies fixed positioning next to hamburger menu
-      //   - Dropdown spans full width below fixed header
+      //   - Moves the icon into Redmine's #header alongside the mobile controls
+      //   - Keeps the bell in the same stacking context as the standard header UI
 
       var bellWrapper = document.getElementById('bell-notifications-wrapper');
       if (!bellWrapper) {
-        //console.warn('BellNotifications: Could not find bell wrapper');
         return;
       }
 
-      // Check if we're on mobile (same breakpoint as Redmine's responsive.css)
+      // Remember the hook output position before moving the wrapper.
+      if (!this.originalBellParent) {
+        this.originalBellParent = bellWrapper.parentNode;
+        this.originalBellNextSibling = bellWrapper.nextSibling;
+      }
+
       var isMobile = window.innerWidth <= 899;
 
       if (isMobile) {
-        // Mobile: Keep wrapper in its original DOM position
-        // CSS (media query) handles fixed positioning at top-right next to hamburger menu
+        var mobileToggle = document.querySelector(
+          '.js-flyout-menu-toggle-button, .mobile-toggle-button'
+        );
+        var mobileHeader = (
+          mobileToggle && mobileToggle.closest('#header, header')
+        ) || document.getElementById('header');
+
+        if (mobileHeader) {
+          if (bellWrapper.parentNode !== mobileHeader) {
+            mobileHeader.appendChild(bellWrapper);
+          }
+        } else {
+          this.restoreBellIconPosition(bellWrapper);
+        }
       } else {
-        // Desktop: Move to quick-search area in header
         var quickSearch = document.getElementById('quick-search');
         if (quickSearch) {
-          // Append bell icon after the project jump box in quick-search
-          quickSearch.appendChild(bellWrapper);
+          if (bellWrapper.parentNode !== quickSearch) {
+            quickSearch.appendChild(bellWrapper);
+          }
         } else {
+          this.restoreBellIconPosition(bellWrapper);
           console.warn('BellNotifications: Could not find quick-search element');
         }
+      }
+    },
+
+    restoreBellIconPosition: function(bellWrapper) {
+      if (!this.originalBellParent) {
+        return;
+      }
+
+      if (
+        this.originalBellNextSibling &&
+        this.originalBellNextSibling.parentNode === this.originalBellParent
+      ) {
+        this.originalBellParent.insertBefore(
+          bellWrapper,
+          this.originalBellNextSibling
+        );
+      } else {
+        this.originalBellParent.appendChild(bellWrapper);
       }
     },
 
